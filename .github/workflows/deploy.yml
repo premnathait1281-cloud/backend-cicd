@@ -7,66 +7,59 @@ on:
 
 jobs:
   deploy:
+    name: Deploy Backend to EC2
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 22
 
-      # 3. Install dependencies
       - name: Install dependencies
-        run: npm install
+        run: |
+          npm install
 
-      # 4. Setup SSH
       - name: Setup SSH
         run: |
+          echo "🔐 Setting up SSH configuration..."
           if [ -z "${{ secrets.SSH_KEY }}" ]; then
-            echo "Error: SSH_KEY secret is empty."
+            echo "❌ Error: SSH_KEY secret is empty."
             exit 1
           fi
           if [ -z "${{ secrets.SSH_HOST }}" ]; then
-            echo "Error: SSH_HOST secret is empty."
+            echo "❌ Error: SSH_HOST secret is empty."
             exit 1
           fi
+          if [ -z "${{ secrets.SSH_USER }}" ]; then
+            echo "❌ Error: SSH_USER secret is empty."
+            exit 1
+          fi
+
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      # 5. Prepare remote server
-      - name: Prepare remote server
-        uses: appleboy/ssh-action@v0.1.8
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          script: |
-            sudo mkdir -p /opt/nodejs/backend-cicd
-            sudo chown -R $USER:$USER /opt/nodejs/backend-cicd
-            sudo rm -rf /opt/nodejs/backend-cicd/*
-
-      # 6. Sync files to server
-      - name: Sync files
+      - name: Deploy files to EC2
         run: |
-          rsync -avz --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/nodejs/backend-cicd/
+          echo "🚀 Deploying code to EC2..."
+          rsync -avz --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/nodejs/backend-cicd/
 
-      # 7. Start backend with PM2
-      - name: Start backend with PM2
+      - name: Restart Backend Service on EC2
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
+            echo "🔄 Restarting backend app..."
             cd /opt/nodejs/backend-cicd
-            pm2 describe backend || pm2 start server.js --name backend
-            pm2 restart backend
+            npm install --production
+            pm2 stop all || true
+            pm2 start npm --name "backend" -- start
             pm2 save
-            pm2 startup -u $USER --hp $HOME
+            echo "✅ Backend successfully deployed!"
