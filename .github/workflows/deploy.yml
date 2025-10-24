@@ -15,19 +15,20 @@ jobs:
         with:
           node-version: 22
 
-      - run: |
-          npm install
-        working-directory: ./backend-cicd
+      - name: Install backend dependencies
+        run: npm install
 
-      - uses: appleboy/scp-action@v0.1.4
+      - name: Copy backend to EC2
+        uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          source: backend-cicd/*
+          source: *
           target: /opt/nodejs/backend-cicd/
 
-      - uses: appleboy/ssh-action@v0.1.8
+      - name: Restart backend
+        uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
@@ -36,4 +37,3 @@ jobs:
             cd /opt/nodejs/backend-cicd
             pm2 start server.js --name backend || pm2 restart backend
             pm2 save
-            pm2 startup -u $USER --hp $HOME
