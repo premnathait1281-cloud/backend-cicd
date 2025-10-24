@@ -3,29 +3,28 @@ name: Backend Deployment
 on:
   push:
     branches:
-      - main   # Trigger deployment on push to main
+      - main
 
 jobs:
   deploy:
-    name: Deploy Backend
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the repository
+      # 1. Checkout repository
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Setup Node.js
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 22
 
-      # Install dependencies
+      # 3. Install dependencies
       - name: Install dependencies
         run: npm install
 
-      # Setup SSH
+      # 4. Setup SSH
       - name: Setup SSH
         run: |
           if [ -z "${{ secrets.SSH_KEY }}" ]; then
@@ -41,7 +40,7 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      # Prepare remote server
+      # 5. Prepare remote server
       - name: Prepare remote server
         uses: appleboy/ssh-action@v0.1.8
         with:
@@ -53,12 +52,12 @@ jobs:
             sudo chown -R $USER:$USER /opt/nodejs/backend-cicd
             sudo rm -rf /opt/nodejs/backend-cicd/*
 
-      # Sync files to remote server
+      # 6. Sync files to server
       - name: Sync files
         run: |
           rsync -avz --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/nodejs/backend-cicd/
 
-      # Start backend with PM2
+      # 7. Start backend with PM2
       - name: Start backend with PM2
         uses: appleboy/ssh-action@v0.1.8
         with:
