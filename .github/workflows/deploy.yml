@@ -3,28 +3,38 @@ name: Backend Deployment
 on:
   push:
     branches:
-      - main   # or your deployment branch
+      - main   # change to your deployment branch
 
 jobs:
   deploy:
+    name: Deploy Backend
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Code
+    # 1️⃣ Checkout the code
+    - name: Checkout repository
       uses: actions/checkout@v4
 
+    # 2️⃣ Setup Node.js
     - name: Setup Node.js
       uses: actions/setup-node@v3
       with:
         node-version: 22
 
-    - name: Install Dependencies
+    # 3️⃣ Install dependencies
+    - name: Install npm dependencies
       run: npm install
 
-    - name: Setup SSH Directory
-      run: mkdir -p ~/.ssh
+    # 4️⃣ Setup SSH
+    - name: Setup SSH Key
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
 
-    - name: Prepare Remote Folder
+    # 5️⃣ Prepare remote directory
+    - name: Prepare remote directory
       uses: appleboy/ssh-action@v0.1.8
       with:
         host: ${{ secrets.EC2_HOST }}
@@ -35,13 +45,14 @@ jobs:
           sudo chown -R $USER:$USER /opt/nodejs/backend-cicd
           sudo rm -rf /opt/nodejs/backend-cicd/*
 
-    - name: Sync Files to Server
+    # 6️⃣ Sync code to server
+    - name: Sync files to server
       run: |
-        rsync -avz --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/nodejs/backend-cicd/
+        rsync -avz --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/nodejs/backend-cicd/
 
-    - name: Start/Restart Backend App
+    # 7️⃣ Start or restart PM2 process
+    - name: Deploy with PM2
       uses: appleboy/ssh-action@v0.1.8
-      continue-on-error: true  # Ignore pm2 startup exit code
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ${{ secrets.EC2_USER }}
@@ -51,4 +62,4 @@ jobs:
           pm2 describe backend || pm2 start server.js --name backend
           pm2 restart backend
           pm2 save
-          pm2 startup -u $USER --hp $HOME  # This may exit 1; ignore in CI
+          pm2 startup -u $USER --hp $HOME
