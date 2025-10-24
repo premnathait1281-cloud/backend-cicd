@@ -10,22 +10,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout backend repo
-      - name: Checkout Backend Repo
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2️⃣ Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 22
 
-      # 3️⃣ Install dependencies
-      - name: Install Backend Dependencies
+      - name: Install dependencies
         run: npm install
 
-      # 4️⃣ Prepare EC2 directory
-      - name: Prepare EC2 Directory
+      # Add EC2 host to known_hosts
+      - name: Add EC2 to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      # Prepare EC2 directory
+      - name: Prepare EC2 folder
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -37,15 +41,14 @@ jobs:
             sudo chown -R ubuntu:ubuntu /opt/nodejs/backend-cicd
             sudo rm -rf /opt/nodejs/backend-cicd/*
 
-      # 5️⃣ Copy backend code to EC2 (excluding .git)
-      - name: Copy Backend Code
+      # Copy code using rsync
+      - name: Rsync code to EC2
         run: |
-          rsync -avz --exclude='.git' ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/nodejs/backend-cicd/
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
+          chmod 600 ${{ secrets.EC2_SSH_KEY }}
+          rsync -avz -e "ssh -i ${{ secrets.EC2_SSH_KEY }} -o StrictHostKeyChecking=no" --exclude='.git' ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/nodejs/backend-cicd/
 
-      # 6️⃣ Restart backend using PM2
-      - name: Restart Backend on EC2
+      # Restart backend using PM2
+      - name: Restart Backend
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.EC2_HOST }}
