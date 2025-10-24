@@ -3,50 +3,55 @@ name: Deploy Backend
 on:
   push:
     branches:
-      - main
+      - main   # Change to your dev branch if needed
 
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout backend repository
       - name: Checkout Backend Repo
         uses: actions/checkout@v4
 
+      # 2️⃣ Setup Node.js environment
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 22
 
+      # 3️⃣ Install backend dependencies
       - name: Install Backend Dependencies
         run: npm install
 
-      # ✅ Save SSH key in workspace instead of /tmp
+      # 4️⃣ Save SSH key in workspace
       - name: Save SSH Key
         run: |
           mkdir -p $GITHUB_WORKSPACE/.ssh
           echo "${{ secrets.EC2_KEY }}" > $GITHUB_WORKSPACE/.ssh/ec2_key.pem
           chmod 600 $GITHUB_WORKSPACE/.ssh/ec2_key.pem
 
-      # ✅ Use key_path pointing to persistent workspace
+      # 5️⃣ Copy backend code to EC2
       - name: Copy Backend Code to EC2
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          username: ubuntu                # Use the correct non-root user
           key_path: ${{ github.workspace }}/.ssh/ec2_key.pem
           port: 22
           source: "*"
           target: /opt/nodejs/backend-cicd/
 
+      # 6️⃣ Restart or start backend using PM2
       - name: Restart Backend on EC2
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          username: ubuntu                # Use the same non-root user
           key_path: ${{ github.workspace }}/.ssh/ec2_key.pem
           script: |
             cd /opt/nodejs/backend-cicd
+            # Start PM2 process if it doesn't exist
             pm2 describe backend || pm2 start server.js --name backend
             pm2 restart backend
             pm2 save
