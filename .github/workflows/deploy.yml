@@ -3,64 +3,52 @@ name: Backend Deployment
 on:
   push:
     branches:
-      - main  # Change to your branch
+      - main   # or your deployment branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout code
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v4
 
-      # 2️⃣ Setup Node.js
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: 22
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 22
 
-      # 3️⃣ Install dependencies
-      - name: Install NPM Dependencies
-        run: npm install
+    - name: Install Dependencies
+      run: npm install
 
-      # 4️⃣ Prepare SSH
-      - name: Setup SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+    - name: Setup SSH Directory
+      run: mkdir -p ~/.ssh
 
-      # 5️⃣ Create target folder and clean
-      - name: Prepare Target Folder on EC2
-        uses: appleboy/ssh-action@v0.1.8
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            mkdir -p /opt/nodejs/backend-cicd
-            sudo chown -R $USER:$USER /opt/nodejs/backend-cicd
-            sudo rm -rf /opt/nodejs/backend-cicd/*
+    - name: Prepare Remote Folder
+      uses: appleboy/ssh-action@v0.1.8
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          mkdir -p /opt/nodejs/backend-cicd
+          sudo chown -R $USER:$USER /opt/nodejs/backend-cicd
+          sudo rm -rf /opt/nodejs/backend-cicd/*
 
-      # 6️⃣ Rsync files
-      - name: Sync Files to EC2
-        run: |
-          rsync -avz --exclude='.git' \
-            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
-            ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/nodejs/backend-cicd/
+    - name: Sync Files to Server
+      run: |
+        rsync -avz --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/nodejs/backend-cicd/
 
-      # 7️⃣ Start/Restart App with PM2
-      - name: Start/Restart Backend App
-        uses: appleboy/ssh-action@v0.1.8
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            cd /opt/nodejs/backend-cicd
-            pm2 describe backend || pm2 start server.js --name backend
-            pm2 restart backend
-            pm2 save
-            pm2 startup -u $USER --hp $HOME
+    - name: Start/Restart Backend App
+      uses: appleboy/ssh-action@v0.1.8
+      continue-on-error: true  # Ignore pm2 startup exit code
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          cd /opt/nodejs/backend-cicd
+          pm2 describe backend || pm2 start server.js --name backend
+          pm2 restart backend
+          pm2 save
+          pm2 startup -u $USER --hp $HOME  # This may exit 1; ignore in CI
