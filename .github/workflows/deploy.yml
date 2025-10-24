@@ -3,63 +3,63 @@ name: Backend Deployment
 on:
   push:
     branches:
-      - main
+      - main  # change if your deployment branch is different
 
 jobs:
   deploy:
-    name: Deploy Backend to EC2
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: 🧾 Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
+      - name: 🔧 Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
 
-      - name: Install dependencies
-        run: |
-          npm install
+      - name: 📦 Install dependencies
+        run: npm install
 
-      - name: Setup SSH
+      - name: 🧱 Build the project
+        run: npm run build || echo "No build step found"
+
+      - name: 🔐 Setup SSH Key
         run: |
           echo "🔐 Setting up SSH configuration..."
-          if [ -z "${{ secrets.SSH_KEY }}" ]; then
-            echo "❌ Error: SSH_KEY secret is empty."
+          if [ -z "${{ secrets.EC2_SSH_KEY }}" ]; then
+            echo "❌ Error: EC2_SSH_KEY secret is empty."
             exit 1
           fi
-          if [ -z "${{ secrets.SSH_HOST }}" ]; then
-            echo "❌ Error: SSH_HOST secret is empty."
+          if [ -z "${{ secrets.EC2_HOST }}" ]; then
+            echo "❌ Error: EC2_HOST secret is empty."
             exit 1
           fi
-          if [ -z "${{ secrets.SSH_USER }}" ]; then
-            echo "❌ Error: SSH_USER secret is empty."
+          if [ -z "${{ secrets.EC2_USER }}" ]; then
+            echo "❌ Error: EC2_USER secret is empty."
             exit 1
           fi
 
           mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Deploy files to EC2
+      - name: 📤 Upload files to EC2
         run: |
-          echo "🚀 Deploying code to EC2..."
-          rsync -avz --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/nodejs/backend-cicd/
+          echo "🚀 Deploying files to EC2..."
+          rsync -avz --delete --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/nodejs/backend-cicd/
 
-      - name: Restart Backend Service on EC2
+      - name: 🚀 Restart backend using PM2
         uses: appleboy/ssh-action@v0.1.8
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            echo "🔄 Restarting backend app..."
+            echo "🔁 Restarting PM2 process..."
             cd /opt/nodejs/backend-cicd
             npm install --production
-            pm2 stop all || true
-            pm2 start npm --name "backend" -- start
+            pm2 describe backend || pm2 start server.js --name backend
+            pm2 restart backend
             pm2 save
-            echo "✅ Backend successfully deployed!"
