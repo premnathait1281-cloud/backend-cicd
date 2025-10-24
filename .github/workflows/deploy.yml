@@ -28,6 +28,13 @@ jobs:
           ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
+      # Prepare private key file
+      - name: Setup SSH Key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/ec2_key.pem
+          chmod 600 ~/.ssh/ec2_key.pem
+
       # Prepare EC2 directory
       - name: Prepare EC2 folder
         uses: appleboy/ssh-action@v0.1.8
@@ -44,8 +51,7 @@ jobs:
       # Copy code using rsync
       - name: Rsync code to EC2
         run: |
-          chmod 600 ${{ secrets.EC2_SSH_KEY }}
-          rsync -avz -e "ssh -i ${{ secrets.EC2_SSH_KEY }} -o StrictHostKeyChecking=no" --exclude='.git' ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/nodejs/backend-cicd/
+          rsync -avz -e "ssh -i ~/.ssh/ec2_key.pem -o StrictHostKeyChecking=no" --exclude='.git' ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/nodejs/backend-cicd/
 
       # Restart backend using PM2
       - name: Restart Backend
