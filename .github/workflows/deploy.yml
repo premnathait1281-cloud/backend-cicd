@@ -3,14 +3,14 @@ name: Deploy Backend
 on:
   push:
     branches:
-      - main  # Change to your dev branch if needed
+      - main
 
 jobs:
   deploy-backend:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout Backend Repo
+      # 1️⃣ Checkout backend repo
       - name: Checkout Backend Repo
         uses: actions/checkout@v4
 
@@ -20,12 +20,12 @@ jobs:
         with:
           node-version: 22
 
-      # 3️⃣ Install Backend Dependencies
+      # 3️⃣ Install dependencies
       - name: Install Backend Dependencies
         run: npm install
 
-      # 4️⃣ Clean target folder on EC2
-      - name: Clean Target Folder
+      # 4️⃣ Prepare EC2 directory
+      - name: Prepare EC2 Directory
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -34,21 +34,15 @@ jobs:
           port: 22
           script: |
             mkdir -p /opt/nodejs/backend-cicd
-            sudo rm -rf /opt/nodejs/backend-cicd/*
             sudo chown -R ubuntu:ubuntu /opt/nodejs/backend-cicd
+            sudo rm -rf /opt/nodejs/backend-cicd/*
 
-      # 5️⃣ Copy Backend Code to EC2 (exclude .git)
-      - name: Copy Backend Code to EC2
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          source: "*"
-          target: /opt/nodejs/backend-cicd/
-          rm: true       # Remove existing files before copy
-          exclude: ".git/**"
+      # 5️⃣ Copy backend code to EC2 (excluding .git)
+      - name: Copy Backend Code
+        run: |
+          rsync -avz --exclude='.git' ./ ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/nodejs/backend-cicd/
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_KEY }}
 
       # 6️⃣ Restart backend using PM2
       - name: Restart Backend on EC2
