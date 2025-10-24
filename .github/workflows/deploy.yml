@@ -3,41 +3,60 @@ name: Backend Deployment
 on:
   push:
     branches:
-      - main  # change if you deploy from another branch
+      - main  # Change to your branch
 
 jobs:
   deploy:
+    name: Deploy Backend
     runs-on: ubuntu-latest
 
     steps:
-    # 1️⃣ Checkout repo
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      # 1️⃣ Checkout the repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    # 2️⃣ Setup Node.js
-    - name: Setup Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: 22
+      # 2️⃣ Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 22
 
-    # 3️⃣ Install npm packages
-    - name: Install dependencies
-      run: npm install
+      # 3️⃣ Install dependencies
+      - name: Install dependencies
+        run: npm install
 
-    # 4️⃣ Setup SSH key
-    - name: Setup SSH
-      run: |
-        mkdir -p ~/.ssh
-        echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-        chmod 600 ~/.ssh/id_rsa
-        ssh-keyscan -H ${{ secrets.EC2_HOST }} >> ~/.ssh/known_hosts
+      # 4️⃣ Create SSH folder (in case we need it)
+      - name: Setup SSH
+        run: mkdir -p ~/.ssh
 
-    # 5️⃣ Prepare remote folder
-    - name: Prepare remote directory
-      uses: appleboy/ssh-action@v0.1.8
-      with:
-        host: ${{ secrets.EC2_HOST }}
-        username: ${{ secrets.EC2_USER }}
-        key: ${{ secrets.EC2_SSH_KEY }}
-        script: |
-          mkdir -p /opt/nodejs/backend-
+      # 5️⃣ Prepare remote server folder
+      - name: Prepare server directory
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            mkdir -p ~/backend-cicd
+            rm -rf ~/backend-cicd/*
+
+      # 6️⃣ Rsync files to remote server
+      - name: Sync files to server
+        run: |
+          rsync -avz --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:~/backend-cicd/
+
+      # 7️⃣ Start/restart backend using PM2
+      - name: Start backend with PM2
+        uses: appleboy/ssh-action@v0.1.8
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            cd ~/backend-cicd
+            pm2 describe backend || pm2 start server.js --name backend
+            pm2 restart backend
+            pm2 save
+            pm2 startup -u $USER --hp $HOME
