@@ -3,7 +3,7 @@ name: Backend Deployment
 on:
   push:
     branches:
-      - main   # Trigger on push to main branch
+      - main   # Trigger deployment on push to main
 
 jobs:
   deploy:
@@ -12,7 +12,7 @@ jobs:
 
     steps:
       # Checkout the repository
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
       # Setup Node.js
@@ -28,30 +28,38 @@ jobs:
       # Setup SSH
       - name: Setup SSH
         run: |
+          if [ -z "${{ secrets.SSH_KEY }}" ]; then
+            echo "Error: SSH_KEY secret is empty."
+            exit 1
+          fi
+          if [ -z "${{ secrets.SSH_HOST }}" ]; then
+            echo "Error: SSH_HOST secret is empty."
+            exit 1
+          fi
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts
 
-      # Clean remote folder
-      - name: Prepare Remote Server
+      # Prepare remote server
+      - name: Prepare remote server
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            mkdir -p /opt/nodejs/backend-cicd
+            sudo mkdir -p /opt/nodejs/backend-cicd
             sudo chown -R $USER:$USER /opt/nodejs/backend-cicd
             sudo rm -rf /opt/nodejs/backend-cicd/*
 
       # Sync files to remote server
-      - name: Deploy Files
+      - name: Sync files
         run: |
           rsync -avz --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=yes" ./ ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/nodejs/backend-cicd/
 
-      # Start / Restart backend using PM2
-      - name: Start Backend with PM2
+      # Start backend with PM2
+      - name: Start backend with PM2
         uses: appleboy/ssh-action@v0.1.8
         with:
           host: ${{ secrets.SSH_HOST }}
